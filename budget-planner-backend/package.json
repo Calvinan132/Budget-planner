@@ -1,0 +1,44 @@
+{
+  "name": "budget-planner-backend",
+  "version": "1.0.0",
+  "description": "Production-ready, modular RESTful API backend for Budget Planner app using Node.js, TypeScript, Express, Firebase Admin SDK, Zod, and node-cron.",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "npx tsx watch src/server.ts"
+  },
+  "keywords": [
+    "budget-planner",
+    "nodejs",
+    "typescript",
+    "express",
+    "firebase",
+    "firestore",
+    "zod",
+    "cron"
+  ],
+  "author": "Budget Planner Team",
+  "license": "MIT",
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.5",
+    "@types/luxon": "^3.7.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.10.0",
+    "luxon": "^3.7.2",
+    "node-cron": "^3.0.3",
+    "uuid": "^11.1.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.3"
+  }
+}
