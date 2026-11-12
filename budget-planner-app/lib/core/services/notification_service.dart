@@ -58,6 +58,14 @@ class NotificationService {
     }
   }
 
+  Future<void> showTestNotification() async {
+    await _showLocalNotification(
+      id: 999,
+      title: 'Budget Planner 🐷',
+      body: 'Đừng quên kiểm tra và điểm danh các khoản chi hôm nay nhé!',
+    );
+  }
+
   Future<void> _showLocalNotification({
     required int id,
     required String title,

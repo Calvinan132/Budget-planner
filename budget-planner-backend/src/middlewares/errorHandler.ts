@@ -19,10 +19,15 @@ export const errorHandler = (
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   next: NextFunction
 ): void => {
-  console.error('[Error Handler]:', err);
-
   const statusCode = err instanceof AppError ? err.statusCode : HTTP_STATUS.INTERNAL_SERVER_ERROR;
   const message = err.message || MESSAGES.SERVER.INTERNAL_ERROR;
+
+  // 404 Not Found (như khi người dùng mới chưa tạo plan tháng này) là luồng nghiệp vụ bình thường
+  if (statusCode === HTTP_STATUS.NOT_FOUND) {
+    console.info(`[Info]: ${req.method} ${req.originalUrl} - ${message} (User: ${req.user?.uid || 'anonymous'})`);
+  } else {
+    console.error('[Error Handler]:', err);
+  }
 
   res.status(statusCode).json({
     success: false,

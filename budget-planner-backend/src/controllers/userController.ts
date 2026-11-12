@@ -21,4 +21,18 @@ export class UserController {
       next(error);
     }
   };
+
+  public static getProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.user!.uid;
+      const userProfile = await UserService.getUserProfile(userId);
+
+      res.status(HTTP_STATUS.OK).json({
+        success: true,
+        data: userProfile,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

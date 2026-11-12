@@ -17,4 +17,7 @@ router.get('/current', PlanController.getCurrentPlan);
 // PUT /api/plans/current - Update items in the master plan
 router.put('/current', validateRequest(updatePlanSchema, 'body'), PlanController.updateCurrentPlan);
 
+// POST /api/plans/clone-previous - Clone plan from previous month
+router.post('/clone-previous', PlanController.clonePreviousPlan);
+
 export default router;

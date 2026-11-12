@@ -57,4 +57,41 @@ export class DailyLogController {
       next(error);
     }
   };
+
+  public static deleteUnexpectedExpense = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.user!.uid;
+      const expenseId = req.params.expenseId as string;
+      const targetDate = req.query.date as string | undefined;
+
+      const result = await DailyLogService.deleteUnexpectedExpense(userId, expenseId, targetDate);
+
+      res.status(HTTP_STATUS.OK).json({
+        success: true,
+        message: 'Unexpected expense deleted successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public static updateUnexpectedExpense = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.user!.uid;
+      const expenseId = req.params.expenseId as string;
+      const dto: UnexpectedExpenseDTO = req.body;
+      const targetDate = req.query.date as string | undefined;
+
+      const result = await DailyLogService.updateUnexpectedExpense(userId, expenseId, dto, targetDate);
+
+      res.status(HTTP_STATUS.OK).json({
+        success: true,
+        message: 'Unexpected expense updated successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

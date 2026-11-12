@@ -4,6 +4,10 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../models/budget_plan_model.dart';
+import '../../auth/controllers/auth_controller.dart';
+import '../../../core/utils/date_helper.dart';
+import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/app_drawer.dart';
 import '../controllers/budget_plan_controller.dart';
 
 class MasterPlanInputScreen extends ConsumerStatefulWidget {
@@ -14,30 +18,98 @@ class MasterPlanInputScreen extends ConsumerStatefulWidget {
 }
 
 class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
-  final List<RoutineItem> _dailyRoutines = [
+  List<RoutineItem> _dailyRoutines = [
     RoutineItem(id: '1', name: 'Ăn sáng', amount: 20000),
     RoutineItem(id: '2', name: 'Cà phê', amount: 35000),
   ];
 
-  final List<RoutineItem> _weeklyRoutines = [
+  List<RoutineItem> _weeklyRoutines = [
     RoutineItem(id: '3', name: 'Đi siêu thị', amount: 500000, frequencyPerWeek: 1),
   ];
 
-  final List<RoutineItem> _monthlyFixed = [
+  List<RoutineItem> _monthlyFixed = [
     RoutineItem(id: '4', name: 'Tiền nhà', amount: 3500000),
     RoutineItem(id: '5', name: 'Điện nước', amount: 500000),
     RoutineItem(id: '6', name: 'Internet', amount: 250000),
   ];
 
+  BudgetPlanModel? _editingPlan;
+  bool _hasPopulatedFromPlan = false;
+  bool _userHasModified = false;
+
+  // So tien co the su dung trong thang nay
+  final TextEditingController _initialBudgetController = TextEditingController();
+  double _initialBudget = 0;
+
+  // Luôn tính theo số ngày còn lại trong tháng
+  int get _activeDays => DateHelper.getRemainingDaysInMonth(DateTime.now());
+
   double get _calculatedTotal {
-    double daily = _dailyRoutines.fold(0, (sum, item) => sum + (item.amount * 30));
+    final days = _activeDays;
+    double daily = _dailyRoutines.fold(0, (sum, item) => sum + (item.amount * days));
+    double weeks = days / 7.0;
     double weekly = _weeklyRoutines.fold(
-        0, (sum, item) => sum + (item.amount * item.frequencyPerWeek * 4.33));
+        0, (sum, item) => sum + (item.amount * item.frequencyPerWeek * weeks));
     double fixed = _monthlyFixed.fold(0, (sum, item) => sum + item.amount);
     return daily + weekly + fixed;
   }
 
+  double get _budgetPerDay {
+    if (_initialBudget <= 0 || _activeDays <= 0) return 0;
+    return _initialBudget / _activeDays;
+  }
+
+  void _populateFromPlan(BudgetPlanModel targetPlan) {
+    _editingPlan = targetPlan;
+    _dailyRoutines = targetPlan.dailyRoutines
+        .map((e) => RoutineItem(id: e.id, name: e.name, amount: e.amount))
+        .toList();
+    _weeklyRoutines = targetPlan.weeklyRoutines
+        .map((e) => RoutineItem(
+              id: e.id,
+              name: e.name,
+              amount: e.amount,
+              frequencyPerWeek: e.frequencyPerWeek,
+            ))
+        .toList();
+    _monthlyFixed = targetPlan.monthlyFixed
+        .map((e) => RoutineItem(id: e.id, name: e.name, amount: e.amount))
+        .toList();
+    _initialBudget = targetPlan.initialBudget > 0
+        ? targetPlan.initialBudget
+        : targetPlan.totalPlanned;
+    if (_initialBudget > 0) {
+      _initialBudgetController.text = _initialBudget.toStringAsFixed(0);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_hasPopulatedFromPlan) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is BudgetPlanModel) {
+        _hasPopulatedFromPlan = true;
+        _populateFromPlan(args);
+      } else {
+        final existingPlan = ref.read(budgetPlanControllerProvider).plan;
+        if (existingPlan != null) {
+          _hasPopulatedFromPlan = true;
+          _populateFromPlan(existingPlan);
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _initialBudgetController.dispose();
+    super.dispose();
+  }
+
+
   void _addDailyItem() {
+    _userHasModified = true;
     setState(() {
       _dailyRoutines.add(RoutineItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -48,6 +120,7 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
   }
 
   void _addWeeklyItem() {
+    _userHasModified = true;
     setState(() {
       _weeklyRoutines.add(RoutineItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -59,6 +132,7 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
   }
 
   void _addMonthlyItem() {
+    _userHasModified = true;
     setState(() {
       _monthlyFixed.add(RoutineItem(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -69,37 +143,91 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
   }
 
   void _submitPlan() async {
+    // Validate: nguoi dung phai nhap so tien ngan sach
+    if (_initialBudget <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ban can nhap so tien co the su dung trong thang nay!'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     final calculated = _calculatedTotal;
+    final isEditing = _editingPlan != null;
+
     final plan = BudgetPlanModel(
+      id: isEditing ? _editingPlan!.id : null,
       dailyRoutines: _dailyRoutines,
       weeklyRoutines: _weeklyRoutines,
       monthlyFixed: _monthlyFixed,
+      initialBudget: _initialBudget,
       totalPlanned: calculated,
-      actualSpent: calculated, // Phase 1: Assumed full spend baseline
-      savedAmount: 0.0,
-      isLocked: true,
+      actualSpent: isEditing ? _editingPlan!.actualSpent : calculated,
+      savedAmount: isEditing
+          ? _editingPlan!.savedAmount
+          : (_initialBudget - calculated).clamp(0, double.infinity),
+      isLocked: isEditing ? _editingPlan!.isLocked : true,
     );
 
-    final success = await ref
-        .read(budgetPlanControllerProvider.notifier)
-        .savePlan(plan);
+    final notifier = ref.read(budgetPlanControllerProvider.notifier);
+    final success = isEditing
+        ? await notifier.updatePlan(plan)
+        : await notifier.savePlan(plan);
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Kịch bản ngân sách đã được kích hoạt thành công!')),
+        SnackBar(
+          content: Text(isEditing
+              ? 'Ke hoach da duoc cap nhat!'
+              : 'Kich ban ngan sach da duoc kich hoat thanh cong!'),
+        ),
       );
-      Navigator.pushReplacementNamed(context, '/home');
+      if (isEditing) {
+        Navigator.pop(context); // Quay lai man hinh tong ke hoach
+      } else {
+        Navigator.pushReplacementNamed(context, '/home');
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final user = ref.watch(authControllerProvider).user;
+    final planState = ref.watch(budgetPlanControllerProvider);
+
+    if (!_hasPopulatedFromPlan && !_userHasModified) {
+      final currentPlan = planState.plan;
+      if (currentPlan != null) {
+        _hasPopulatedFromPlan = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            setState(() {
+              _populateFromPlan(currentPlan);
+            });
+          }
+        });
+      }
+    }
+
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
+      drawer: const AppDrawer(),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded, color: AppColors.primaryDark),
-          onPressed: () {},
+        leading: Builder(
+          builder: (context) {
+            if (Navigator.canPop(context)) {
+              return IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryDark),
+                onPressed: () => Navigator.pop(context),
+              );
+            }
+            return IconButton(
+              icon: const Icon(Icons.menu_rounded, color: AppColors.primaryDark),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            );
+          },
         ),
         title: Text(
           'Financial Serenity',
@@ -107,20 +235,23 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
             fontSize: 18,
           ),
         ),
-        actions: const [
+        actions: [
           Padding(
-            padding: EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: UserAvatar(
               radius: 18,
-              backgroundImage: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'),
+              photoUrl: user?.photoUrl,
+              displayName: user?.displayName,
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
+      body: planState.isLoading && _editingPlan == null && !_hasPopulatedFromPlan
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          : Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 18.0, vertical: 12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -140,7 +271,149 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Section 1: Chi phí Hàng ngày
+                  // Step 0: User enters their monthly available budget
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8F8F0), Color(0xFFD1FAE5)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF86EFAC), width: 1),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.savings_rounded, size: 22, color: AppColors.primaryDark),
+                            const SizedBox(width: 8),
+                            Text(
+                              'So tien co the tieu thang nay',
+                              style: AppTextStyles.headingSmall(color: AppColors.primaryDark).copyWith(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Nhap tong so tien ban co the su dung trong thang nay. Phan con lai sau chi tieu ke hoach se vao Quy heo dat.',
+                          style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(fontSize: 12),
+                        ),
+                        const SizedBox(height: 14),
+                        TextFormField(
+                          controller: _initialBudgetController,
+                          keyboardType: TextInputType.number,
+                          style: AppTextStyles.headingMedium(color: AppColors.primaryDark).copyWith(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          decoration: InputDecoration(
+                            hintText: 'Vi du: 5000000',
+                            hintStyle: AppTextStyles.bodyMedium(color: AppColors.textMuted),
+                            suffixText: 'VND',
+                            suffixStyle: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: Color(0xFF86EFAC), width: 1.5),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: const BorderSide(color: AppColors.primaryDark, width: 2),
+                            ),
+                          ),
+                          onChanged: (val) {
+                            setState(() {
+                              _initialBudget = double.tryParse(val.replaceAll(',', '').replaceAll('.', '')) ?? 0;
+                            });
+                          },
+                        ),
+                        // Show estimated piggy bank if budget entered
+                        if (_initialBudget > 0 && _calculatedTotal > 0) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'Du kien vao Quy heo dat:',
+                                  style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(fontSize: 12),
+                                ),
+                                Text(
+                                  CurrencyFormatter.formatVND(
+                                    (_initialBudget - _calculatedTotal).clamp(0, double.infinity),
+                                  ),
+                                  style: AppTextStyles.bodyLarge(color: AppColors.primaryDark).copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Info chip: tự động tính theo số ngày còn lại
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8F8F0),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.hourglass_top_rounded, size: 16, color: AppColors.primaryDark),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Tính theo $_activeDays ngày còn lại trong tháng (từ hôm nay ${DateTime.now().day}/${DateTime.now().month})',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ),
+                        if (_budgetPerDay > 0) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '${CurrencyFormatter.formatShort(_budgetPerDay)}/ngày',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryDark,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Section 1: Chi phi Hang ngay
                   _buildSectionCard(
                     icon: Icons.calendar_today_rounded,
                     title: 'Chi phí Hàng ngày',
@@ -187,7 +460,7 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 16,
                   offset: const Offset(0, -4),
                 ),
@@ -206,19 +479,19 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Dự kiến chi tiêu',
+                            'Dự kiến chi ($_activeDays ngày còn lại):',
                             style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
                           ),
                           Text(
-                            'thực tế:',
-                            style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
+                            'Tính từ hôm nay đến cuối tháng',
+                            style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(fontSize: 11),
                           ),
                         ],
                       ),
                       Text(
-                        '${CurrencyFormatter.formatVND(_calculatedTotal, showSymbol: true)}/tháng',
+                        '${CurrencyFormatter.formatVND(_calculatedTotal, showSymbol: true)} ($_activeDays ngày)',
                         style: AppTextStyles.headingMedium(color: AppColors.primaryDark).copyWith(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
@@ -235,7 +508,7 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
                     ),
                     onPressed: _submitPlan,
                     child: Text(
-                      'Kích hoạt kịch bản tháng',
+                      'Lưu kế hoạch chi tiêu',
                       style: AppTextStyles.button(color: Colors.white).copyWith(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -438,4 +711,6 @@ class _MasterPlanInputScreenState extends ConsumerState<MasterPlanInputScreen> {
       ),
     );
   }
+
 }
+

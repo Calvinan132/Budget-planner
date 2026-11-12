@@ -27,6 +27,31 @@ class AuthInterceptor extends Interceptor {
       // 2. Fallback to secure storage
       token ??= await _secureStorage.read(key: 'auth_token');
 
+      // Lấy userId thực tế của người dùng:
+      // Ưu tiên Firebase Auth UID -> Stored user_id
+      String? actualUid;
+      String? actualEmail;
+      if (Firebase.apps.isNotEmpty) {
+        try {
+          final currentUser = FirebaseAuth.instance.currentUser;
+          actualUid = currentUser?.uid;
+          actualEmail = currentUser?.email;
+        } catch (_) {}
+      }
+      actualUid ??= await _secureStorage.read(key: 'user_id');
+      actualEmail ??= await _secureStorage.read(key: 'user_email');
+
+      final effectiveUserId = (actualUid != null && actualUid.isNotEmpty)
+          ? actualUid
+          : 'user_${actualEmail?.hashCode.abs() ?? "dev"}';
+
+      // Gửi cả x-dev-user-id, x-user-id và x-user-email để backend nhận diện chuẩn xác tài khoản người dùng
+      options.headers['x-dev-user-id'] = effectiveUserId;
+      options.headers['x-user-id'] = effectiveUserId;
+      if (actualEmail != null && actualEmail.isNotEmpty) {
+        options.headers['x-user-email'] = actualEmail;
+      }
+
       if (token != null && token.isNotEmpty) {
         options.headers['Authorization'] = 'Bearer $token';
       }

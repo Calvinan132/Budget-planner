@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "185847589576",
+    "project_id": "budget-planner-backend",
+    "storage_bucket": "budget-planner-backend.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185847589576:android:b5f75957db96de00ab53fd",
+        "android_client_info": {
+          "package_name": "com.budgetplanner.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "185847589576-m6n5k8l908kordcfr9gv7dqj52nm98ub.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgSFA4JUFTyQtjWr0Jha_Dgi2VTDF_Orw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "185847589576-m6n5k8l908kordcfr9gv7dqj52nm98ub.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "185847589576-ng6aru7ptr3hth8iamua7da2nk4taa0i.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.budgetPlannerApp"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:185847589576:android:bbd10023d1b07447ab53fd",
+        "android_client_info": {
+          "package_name": "com.example.budget_planner_app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "185847589576-m6n5k8l908kordcfr9gv7dqj52nm98ub.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCgSFA4JUFTyQtjWr0Jha_Dgi2VTDF_Orw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "185847589576-m6n5k8l908kordcfr9gv7dqj52nm98ub.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "185847589576-ng6aru7ptr3hth8iamua7da2nk4taa0i.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.budgetPlannerApp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

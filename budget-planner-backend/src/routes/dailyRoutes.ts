@@ -21,4 +21,17 @@ router.post(
   DailyLogController.addUnexpectedExpense
 );
 
+// PUT /api/daily/unexpected-expense/:expenseId - Update amount/reason of an unexpected expense
+router.put(
+  '/unexpected-expense/:expenseId',
+  validateRequest(unexpectedExpenseSchema, 'body'),
+  DailyLogController.updateUnexpectedExpense
+);
+
+// DELETE /api/daily/unexpected-expense/:expenseId - Undo/Delete unexpected expense
+router.delete(
+  '/unexpected-expense/:expenseId',
+  DailyLogController.deleteUnexpectedExpense
+);
+
 export default router;

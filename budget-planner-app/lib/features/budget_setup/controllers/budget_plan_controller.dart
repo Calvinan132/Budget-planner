@@ -61,6 +61,19 @@ class BudgetPlanController extends StateNotifier<BudgetPlanState> {
     }
   }
 
+  /// Cập nhật (chỉnh sửa) kế hoạch hiện tại mà không reset về mặc định.
+  Future<bool> updatePlan(BudgetPlanModel plan) async {
+    state = state.copyWith(isLoading: true);
+    try {
+      final updated = await _service.updateCurrentPlan(plan);
+      state = state.copyWith(plan: updated, isLoading: false);
+      return true;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      return false;
+    }
+  }
+
   void incrementActualSpent(double amount) {
     if (state.plan == null) return;
     

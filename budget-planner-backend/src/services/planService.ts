@@ -5,6 +5,9 @@ import { AppError } from '../middlewares/errorHandler';
 import { HTTP_STATUS } from '../constants/statusCodes';
 import { MESSAGES } from '../constants/messages';
 import { inMemoryDb } from '../config/inMemoryDb';
+import { db } from '../config/firebase';
+
+const PLANS_COLLECTION = 'monthly_plans';
 
 export class PlanService {
   public static getPlanDocId(userId: string, year: number, month: number): string {
@@ -28,10 +31,24 @@ export class PlanService {
   }
 
   public static async createPlan(userId: string, data: CreatePlanDTO): Promise<MonthlyPlan> {
-    const docId = this.getPlanDocId(userId, data.year, data.month);
-    
-    if (inMemoryDb.plans[docId]) {
-      throw new AppError(MESSAGES.PLAN.ALREADY_EXISTS, HTTP_STATUS.CONFLICT);
+    // Mặc định tháng/năm theo giờ Việt Nam nếu client không gửi (khớp với getCurrentPlan).
+    const nowVietnam = DateTime.now().setZone('Asia/Ho_Chi_Minh');
+    const month = data.month || nowVietnam.month;
+    const year = data.year || nowVietnam.year;
+
+    const docId = this.getPlanDocId(userId, year, month);
+
+    // 1. Check existing in Firestore / inMemoryDb
+    try {
+      const docSnap = await db.collection(PLANS_COLLECTION).doc(docId).get();
+      if (docSnap.exists || inMemoryDb.plans[docId]) {
+        throw new AppError(MESSAGES.PLAN.ALREADY_EXISTS, HTTP_STATUS.CONFLICT);
+      }
+    } catch (err: any) {
+      if (err instanceof AppError) throw err;
+      if (inMemoryDb.plans[docId]) {
+        throw new AppError(MESSAGES.PLAN.ALREADY_EXISTS, HTTP_STATUS.CONFLICT);
+      }
     }
 
     const dailyRoutines = data.dailyRoutines.map((item) => ({
@@ -51,16 +68,19 @@ export class PlanService {
       amount: item.amount,
     }));
 
-    const totalPlanned = this.calculateTotalPlanned(data.month, data.year, dailyRoutines, weeklyRoutines, monthlyFixed);
+    const totalPlanned = this.calculateTotalPlanned(month, year, dailyRoutines, weeklyRoutines, monthlyFixed);
+    const initialBudget = data.initialBudget !== undefined ? data.initialBudget : totalPlanned;
     const actualSpent = 0;
-    const savedAmount = totalPlanned;
+    // Tiền tiết kiệm = Số tiền người dùng nhập đầu tháng - Số tiền tiêu dự kiến + số tiền không tiêu - phát sinh
+    const savedAmount = Math.round((initialBudget - totalPlanned) * 100) / 100;
     const now = new Date().toISOString();
 
     const newPlan: MonthlyPlan = {
       id: docId,
       userId,
-      month: data.month,
-      year: data.year,
+      month,
+      year,
+      initialBudget,
       totalPlanned,
       actualSpent,
       savedAmount,
@@ -73,6 +93,12 @@ export class PlanService {
     };
 
     inMemoryDb.plans[docId] = newPlan;
+    try {
+      await db.collection(PLANS_COLLECTION).doc(docId).set(newPlan);
+    } catch (err) {
+      console.warn('[PlanService] Firestore set failed, fallback inMemoryDb:', err);
+    }
+
     return newPlan;
   }
 
@@ -82,8 +108,20 @@ export class PlanService {
     const targetYear = year || nowVietnam.year;
 
     const docId = this.getPlanDocId(userId, targetYear, targetMonth);
-    const plan = inMemoryDb.plans[docId];
 
+    // Try Firestore first
+    try {
+      const docSnap = await db.collection(PLANS_COLLECTION).doc(docId).get();
+      if (docSnap.exists) {
+        const plan = docSnap.data() as MonthlyPlan;
+        inMemoryDb.plans[docId] = plan;
+        return plan;
+      }
+    } catch (err) {
+      console.warn('[PlanService] Firestore get failed, fallback to inMemoryDb:', err);
+    }
+
+    const plan = inMemoryDb.plans[docId];
     if (!plan) {
       throw new AppError(MESSAGES.PLAN.NOT_FOUND, HTTP_STATUS.NOT_FOUND);
     }
@@ -96,16 +134,10 @@ export class PlanService {
     const targetMonth = data.month || nowVietnam.month;
     const targetYear = data.year || nowVietnam.year;
 
-    const docId = this.getPlanDocId(userId, targetYear, targetMonth);
-    const currentPlan = inMemoryDb.plans[docId];
+    const currentPlan = await this.getCurrentPlan(userId, targetMonth, targetYear);
 
-    if (!currentPlan) {
-      throw new AppError(MESSAGES.PLAN.NOT_FOUND, HTTP_STATUS.NOT_FOUND);
-    }
+    // Note: Plan adjustments are permitted to allow users to update their budget routines
 
-    if (currentPlan.isLocked) {
-      throw new AppError('Monthly plan is locked and cannot be updated', HTTP_STATUS.FORBIDDEN);
-    }
 
     const dailyRoutines = data.dailyRoutines
       ? data.dailyRoutines.map((item) => ({
@@ -133,11 +165,16 @@ export class PlanService {
       : currentPlan.monthlyFixed;
 
     const totalPlanned = this.calculateTotalPlanned(targetMonth, targetYear, dailyRoutines, weeklyRoutines, monthlyFixed);
-    const savedAmount = Math.round((totalPlanned - currentPlan.actualSpent) * 100) / 100;
+    const initialBudget = data.initialBudget !== undefined ? data.initialBudget : (currentPlan.initialBudget ?? totalPlanned);
+    // Tiền tiết kiệm = initialBudget - totalPlanned + (các khoản đã skipped - phát sinh)
+    // Để bảo toàn các delta skipped/unexpected trước đó:
+    const baseSavingsChange = (initialBudget - totalPlanned) - ((currentPlan.initialBudget ?? currentPlan.totalPlanned) - currentPlan.totalPlanned);
+    const savedAmount = Math.round((currentPlan.savedAmount + baseSavingsChange) * 100) / 100;
     const updatedAt = new Date().toISOString();
 
     const updatedPlan: MonthlyPlan = {
       ...currentPlan,
+      initialBudget,
       totalPlanned,
       savedAmount,
       isLocked: data.isLocked ?? currentPlan.isLocked,
@@ -147,7 +184,39 @@ export class PlanService {
       updatedAt,
     };
 
+    const docId = currentPlan.id;
     inMemoryDb.plans[docId] = updatedPlan;
+    try {
+      await db.collection(PLANS_COLLECTION).doc(docId).set(updatedPlan, { merge: true });
+    } catch (err) {
+      console.warn('[PlanService] Firestore update failed, fallback to inMemoryDb:', err);
+    }
+
     return updatedPlan;
   }
+
+  /**
+   * Clone routines and fixed items from previous month to new month
+   */
+  public static async clonePreviousPlan(
+    userId: string,
+    targetMonth: number,
+    targetYear: number
+  ): Promise<MonthlyPlan> {
+    const prevDate = DateTime.fromObject({ year: targetYear, month: targetMonth, day: 1 }).minus({ months: 1 });
+    const prevPlan = await this.getCurrentPlan(userId, prevDate.month, prevDate.year);
+
+    return this.createPlan(userId, {
+      month: targetMonth,
+      year: targetYear,
+      dailyRoutines: prevPlan.dailyRoutines.map((r) => ({ name: r.name, amount: r.amount })),
+      weeklyRoutines: prevPlan.weeklyRoutines.map((w) => ({
+        name: w.name,
+        amount: w.amount,
+        frequencyPerWeek: w.frequencyPerWeek,
+      })),
+      monthlyFixed: prevPlan.monthlyFixed.map((m) => ({ name: m.name, amount: m.amount })),
+    });
+  }
 }
+

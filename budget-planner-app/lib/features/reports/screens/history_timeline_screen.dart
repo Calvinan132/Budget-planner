@@ -6,11 +6,123 @@ import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/date_helper.dart';
 import '../controllers/report_controller.dart';
 
-class HistoryTimelineScreen extends ConsumerWidget {
+class HistoryTimelineScreen extends ConsumerStatefulWidget {
   const HistoryTimelineScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HistoryTimelineScreen> createState() => _HistoryTimelineScreenState();
+}
+
+class _HistoryTimelineScreenState extends ConsumerState<HistoryTimelineScreen> {
+  DateTime _selectedMonth = DateTime(DateTime.now().year, DateTime.now().month);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(monthlyReportControllerProvider.notifier)
+          .loadReport(_selectedMonth.month, _selectedMonth.year);
+    });
+  }
+
+  Future<void> _pickMonth() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedMonth,
+      firstDate: DateTime(2020),
+      lastDate: now,
+      initialDatePickerMode: DatePickerMode.year,
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedMonth = DateTime(picked.year, picked.month);
+      });
+      ref
+          .read(monthlyReportControllerProvider.notifier)
+          .loadReport(_selectedMonth.month, _selectedMonth.year);
+    }
+  }
+
+  Widget _buildMonthSelector() {
+    final now = DateTime.now();
+    final isCurrentMonth =
+        _selectedMonth.year == now.year && _selectedMonth.month == now.month;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded, color: AppColors.primaryDark),
+            onPressed: () {
+              setState(() {
+                _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+              });
+              ref
+                  .read(monthlyReportControllerProvider.notifier)
+                  .loadReport(_selectedMonth.month, _selectedMonth.year);
+            },
+            tooltip: 'Tháng trước',
+          ),
+          InkWell(
+            onTap: _pickMonth,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.primaryDark),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tháng ${_selectedMonth.month}/${_selectedMonth.year}',
+                    style: AppTextStyles.headingSmall(color: AppColors.primaryDark).copyWith(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.chevron_right_rounded,
+              color: isCurrentMonth ? AppColors.textMuted : AppColors.primaryDark,
+            ),
+            onPressed: isCurrentMonth
+                ? null
+                : () {
+                    setState(() {
+                      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+                    });
+                    ref
+                        .read(monthlyReportControllerProvider.notifier)
+                        .loadReport(_selectedMonth.month, _selectedMonth.year);
+                  },
+            tooltip: 'Tháng sau',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final reportState = ref.watch(monthlyReportControllerProvider);
     final historyList = reportState.history;
 
@@ -27,17 +139,44 @@ class HistoryTimelineScreen extends ConsumerWidget {
             fontSize: 18,
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.calendar_month_rounded, color: AppColors.primaryDark),
+            onPressed: _pickMonth,
+            tooltip: 'Chọn tháng',
+          ),
+        ],
       ),
-      body: historyList.isEmpty
-          ? Center(
-              child: Text(
-                'Chưa có dữ liệu lịch sử cho tháng này.',
-                style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(20),
-              itemCount: historyList.length,
+      body: Column(
+        children: [
+          _buildMonthSelector(),
+          Expanded(
+            child: RefreshIndicator(
+              color: AppColors.primaryDark,
+              onRefresh: () async {
+                await ref
+                    .read(monthlyReportControllerProvider.notifier)
+                    .loadReport(_selectedMonth.month, _selectedMonth.year);
+              },
+              child: reportState.isLoading
+                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+                  : historyList.isEmpty
+                      ? ListView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          children: [
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                            Center(
+                              child: Text(
+                                'Chưa có dữ liệu lịch sử cho Tháng ${_selectedMonth.month}/${_selectedMonth.year}.',
+                                style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
+                              ),
+                            ),
+                          ],
+                        )
+                      : ListView.builder(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(20),
+                          itemCount: historyList.length,
               itemBuilder: (context, index) {
                 final item = historyList[index];
                 return Padding(
@@ -123,6 +262,10 @@ class HistoryTimelineScreen extends ConsumerWidget {
                 );
               },
             ),
-    );
-  }
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }

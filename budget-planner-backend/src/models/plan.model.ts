@@ -24,9 +24,10 @@ export interface MonthlyPlan {
   userId: string;
   month: number; // 1-12
   year: number;
-  totalPlanned: number;
-  actualSpent: number;
-  savedAmount: number;
+  initialBudget: number; // Số tiền người dùng nhập đầu tháng có thể sử dụng
+  totalPlanned: number; // Tổng số tiền tiêu dự kiến
+  actualSpent: number; // Tổng chi tiêu thực tế
+  savedAmount: number; // Tiền tiết kiệm (Heo đất)
   isLocked: boolean;
   dailyRoutines: DailyRoutine[];
   weeklyRoutines: WeeklyRoutine[];
@@ -55,8 +56,9 @@ const monthlyFixedSchema = z.object({
 });
 
 export const createPlanSchema = z.object({
-  month: z.number().min(1).max(12),
-  year: z.number().min(2000).max(2100),
+  month: z.number().min(1).max(12).optional(),
+  year: z.number().min(2000).max(2100).optional(),
+  initialBudget: z.number().min(0, 'Initial budget must be non-negative').optional(),
   dailyRoutines: z.array(dailyRoutineSchema).default([]),
   weeklyRoutines: z.array(weeklyRoutineSchema).default([]),
   monthlyFixed: z.array(monthlyFixedSchema).default([]),
@@ -65,6 +67,7 @@ export const createPlanSchema = z.object({
 export const updatePlanSchema = z.object({
   month: z.number().min(1).max(12).optional(),
   year: z.number().min(2000).max(2100).optional(),
+  initialBudget: z.number().min(0, 'Initial budget must be non-negative').optional(),
   dailyRoutines: z.array(dailyRoutineSchema).optional(),
   weeklyRoutines: z.array(weeklyRoutineSchema).optional(),
   monthlyFixed: z.array(monthlyFixedSchema).optional(),

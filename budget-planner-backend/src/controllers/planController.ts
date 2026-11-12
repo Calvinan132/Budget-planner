@@ -56,4 +56,26 @@ export class PlanController {
       next(error);
     }
   };
+
+  public static clonePreviousPlan = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = req.user!.uid;
+      const targetMonth = req.body.month ? parseInt(req.body.month as string, 10) : undefined;
+      const targetYear = req.body.year ? parseInt(req.body.year as string, 10) : undefined;
+
+      const now = new Date();
+      const month = targetMonth || now.getMonth() + 1;
+      const year = targetYear || now.getFullYear();
+
+      const plan = await PlanService.clonePreviousPlan(userId, month, year);
+
+      res.status(HTTP_STATUS.CREATED).json({
+        success: true,
+        message: 'Plan cloned successfully from previous month',
+        data: plan,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
 }

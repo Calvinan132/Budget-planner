@@ -1,46 +1,61 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/constants/api_endpoints.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/services/offline_cache_service.dart';
 import '../../../models/budget_plan_model.dart';
 
 class BudgetPlanService {
   final DioClient _dioClient;
+  final OfflineCacheService _cacheService = OfflineCacheService();
 
   BudgetPlanService(this._dioClient);
 
   Future<BudgetPlanModel> createPlan(BudgetPlanModel plan) async {
     try {
+      // Backend yêu cầu month + year để tạo doc {uid}_{year}_{month} trong monthly_plans.
+      // Gửi kèm tháng/năm hiện tại (giờ Việt Nam) để plan được lưu lên Firestore
+      // thay vì bị từ chối validation và chỉ lưu cache cục bộ.
+      final now = DateTime.now();
       final response = await _dioClient.dio.post(
         ApiEndpoints.createPlan,
-        data: plan.toJson(),
+        data: {
+          'month': now.month,
+          'year': now.year,
+          ...plan.toJson(),
+        },
       );
-      return BudgetPlanModel.fromJson(response.data['data']);
+      final saved = BudgetPlanModel.fromJson(response.data['data']);
+      await _cacheService.cacheCurrentPlan(saved);
+      return saved;
     } catch (e) {
-      return plan; // Return local plan if backend is offline
+      debugPrint('[BudgetPlanService] Network create plan failed, saving to local cache: $e');
+      await _cacheService.cacheCurrentPlan(plan);
+      return plan;
     }
   }
 
   Future<BudgetPlanModel?> getCurrentPlan() async {
     try {
       final response = await _dioClient.dio.get(ApiEndpoints.currentPlan);
-      return BudgetPlanModel.fromJson(response.data['data']);
+      if (response.data != null && response.data['data'] != null) {
+        final plan = BudgetPlanModel.fromJson(response.data['data']);
+        await _cacheService.cacheCurrentPlan(plan);
+        return plan;
+      }
+      return null;
+    } on DioException catch (dioErr) {
+      if (dioErr.response?.statusCode == 404) {
+        // Backend confirms: No plan exists for the current month!
+        debugPrint('[BudgetPlanService] No active plan found for this month (404).');
+        return null;
+      }
+      // If network unreachable, check if we have a cached plan for this month
+      debugPrint('[BudgetPlanService] DioException checking cache: $dioErr');
+      return await _cacheService.getCachedCurrentPlan();
     } catch (e) {
-      // Default local plan fallback
-      return BudgetPlanModel(
-        id: 'default_plan',
-        dailyRoutines: [
-          RoutineItem(id: '1', name: 'Ăn sáng', amount: 25000),
-          RoutineItem(id: '2', name: 'Cà phê', amount: 35000),
-        ],
-        weeklyRoutines: [
-          RoutineItem(id: '3', name: 'Đi siêu thị', amount: 500000, frequencyPerWeek: 1),
-        ],
-        monthlyFixed: [
-          RoutineItem(id: '4', name: 'Tiền thuê nhà', amount: 3500000),
-          RoutineItem(id: '5', name: 'Điện nước', amount: 500000),
-          RoutineItem(id: '6', name: 'Internet', amount: 250000),
-        ],
-        createdAt: DateTime.now(),
-      );
+      debugPrint('[BudgetPlanService] Error fetching plan, checking offline cache: $e');
+      return await _cacheService.getCachedCurrentPlan();
     }
   }
 
@@ -50,8 +65,11 @@ class BudgetPlanService {
         ApiEndpoints.currentPlan,
         data: plan.toJson(),
       );
-      return BudgetPlanModel.fromJson(response.data['data']);
+      final updated = BudgetPlanModel.fromJson(response.data['data']);
+      await _cacheService.cacheCurrentPlan(updated);
+      return updated;
     } catch (e) {
+      await _cacheService.cacheCurrentPlan(plan);
       return plan;
     }
   }

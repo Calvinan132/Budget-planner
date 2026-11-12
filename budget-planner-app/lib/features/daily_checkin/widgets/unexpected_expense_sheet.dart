@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../models/daily_expense_model.dart';
 import '../controllers/daily_checkin_controller.dart';
 import '../../budget_setup/controllers/budget_plan_controller.dart';
 
 class UnexpectedExpenseSheet extends ConsumerStatefulWidget {
-  const UnexpectedExpenseSheet({super.key});
+  /// Truyền vào khoản chi phát sinh cần SỬA; null = thêm mới.
+  final DailyExpenseModel? editingExpense;
+
+  const UnexpectedExpenseSheet({super.key, this.editingExpense});
 
   @override
   ConsumerState<UnexpectedExpenseSheet> createState() => _UnexpectedExpenseSheetState();
@@ -16,6 +20,18 @@ class UnexpectedExpenseSheet extends ConsumerStatefulWidget {
 class _UnexpectedExpenseSheetState extends ConsumerState<UnexpectedExpenseSheet> {
   String _amountStr = '0';
   final _reasonController = TextEditingController();
+
+  bool get _isEdit => widget.editingExpense != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final expense = widget.editingExpense;
+    if (expense != null) {
+      _amountStr = expense.amount.toStringAsFixed(0);
+      _reasonController.text = expense.name;
+    }
+  }
 
   @override
   void dispose() {
@@ -56,25 +72,39 @@ class _UnexpectedExpenseSheetState extends ConsumerState<UnexpectedExpenseSheet>
       return;
     }
 
-    // Optimistic UI for Budget Plan (actualSpent += amount)
+    // Optimistic UI for Budget Plan (thêm: += amount; sửa: += chênh lệch)
     final budgetNotifier = ref.read(budgetPlanControllerProvider.notifier);
-    budgetNotifier.incrementActualSpent(amount);
+    final double delta = _isEdit ? amount - widget.editingExpense!.amount : amount;
+    budgetNotifier.incrementActualSpent(delta);
 
-    final success = await ref
-        .read(dailyCheckInControllerProvider.notifier)
-        .addUnexpectedExpense(amount, reason.isEmpty ? 'Phát sinh' : reason);
+    final controller = ref.read(dailyCheckInControllerProvider.notifier);
+    final bool success;
+    if (_isEdit) {
+      final expense = widget.editingExpense!;
+      success = await controller.updateUnexpectedExpense(
+        expense.id,
+        expense.amount,
+        amount,
+        reason.isEmpty ? 'Phát sinh' : reason,
+      );
+    } else {
+      success = await controller.addUnexpectedExpense(
+          amount, reason.isEmpty ? 'Phát sinh' : reason);
+    }
 
     if (success && mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã ghi nhận khoản chi phát sinh!'),
+        SnackBar(
+          content: Text(_isEdit
+              ? 'Đã cập nhật khoản chi phát sinh!'
+              : 'Đã ghi nhận khoản chi phát sinh!'),
           backgroundColor: AppColors.successGreen,
         ),
       );
     } else if (!success && mounted) {
       // Rollback
-      budgetNotifier.incrementActualSpent(-amount);
+      budgetNotifier.incrementActualSpent(-delta);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Lỗi hệ thống, đã hoàn tác khoản chi.'),
@@ -116,7 +146,7 @@ class _UnexpectedExpenseSheetState extends ConsumerState<UnexpectedExpenseSheet>
                 children: [
                   const SizedBox(width: 32),
                   Text(
-                    'Quick Log',
+                    _isEdit ? 'Chỉnh sửa khoản chi' : 'Quick Log',
                     style: AppTextStyles.headingMedium(color: AppColors.textPrimary).copyWith(
                       fontSize: 18,
                     ),
@@ -236,12 +266,12 @@ class _UnexpectedExpenseSheetState extends ConsumerState<UnexpectedExpenseSheet>
                 onPressed: _submit,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.check_circle_rounded, size: 20, color: Colors.white),
-                    SizedBox(width: 8),
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 20, color: Colors.white),
+                    const SizedBox(width: 8),
                     Text(
-                      'Save Expense',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      _isEdit ? 'Cập nhật khoản chi' : 'Save Expense',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                   ],
                 ),

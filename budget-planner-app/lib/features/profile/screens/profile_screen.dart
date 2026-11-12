@@ -3,7 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../../core/services/notification_service.dart';
+import '../../../core/theme/theme_provider.dart';
+import '../../../core/widgets/app_drawer.dart';
 import '../../auth/controllers/auth_controller.dart';
+
+final fcmReminderEnabledProvider = StateProvider<bool>((ref) => true);
 
 class ProfileScreen extends ConsumerWidget {
   const ProfileScreen({super.key});
@@ -56,7 +61,7 @@ class ProfileScreen extends ConsumerWidget {
       if (context.mounted) Navigator.of(context).pop();
       // Navigate to welcome/login screen
       if (context.mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+        Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (route) => false);
       }
     }
   }
@@ -66,9 +71,31 @@ class ProfileScreen extends ConsumerWidget {
     final authState = ref.watch(authControllerProvider);
     final user = authState.user;
 
+    final currentTheme = ref.watch(themeModeProvider);
+    final themeLabel = currentTheme == ThemeMode.light
+        ? 'Sáng'
+        : currentTheme == ThemeMode.dark
+            ? 'Tối'
+            : 'Hệ thống';
+
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
+      drawer: const AppDrawer(),
       appBar: AppBar(
+        leading: Builder(
+          builder: (context) {
+            if (Navigator.canPop(context)) {
+              return IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryDark),
+                onPressed: () => Navigator.pop(context),
+              );
+            }
+            return IconButton(
+              icon: const Icon(Icons.menu_rounded, color: AppColors.primaryDark),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            );
+          },
+        ),
         title: Text(
           'Tài khoản',
           style: AppTextStyles.headingMedium(color: AppColors.primaryDark)
@@ -90,7 +117,7 @@ class ProfileScreen extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -136,27 +163,15 @@ class ProfileScreen extends ConsumerWidget {
                 _buildListTile(
                   icon: Icons.notifications_outlined,
                   title: 'Thông báo FCM',
-                  subtitle: 'Cài đặt nhắc nhở chi tiêu',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Tính năng đang được phát triển.'),
-                      ),
-                    );
-                  },
+                  subtitle: 'Nhắc nhở điểm danh hàng ngày',
+                  onTap: () => _showFcmDialog(context, ref),
                 ),
                 _buildDivider(),
                 _buildListTile(
                   icon: Icons.palette_outlined,
                   title: 'Giao diện',
-                  subtitle: 'Sáng / Tối',
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Tính năng đang được phát triển.'),
-                      ),
-                    );
-                  },
+                  subtitle: themeLabel,
+                  onTap: () => _showThemeDialog(context, ref),
                 ),
               ],
             ),
@@ -169,14 +184,15 @@ class ProfileScreen extends ConsumerWidget {
                 _buildListTile(
                   icon: Icons.help_outline_rounded,
                   title: 'Trung tâm trợ giúp',
-                  onTap: () {},
+                  subtitle: 'Hướng dẫn sử dụng & câu hỏi thường gặp',
+                  onTap: () => _showHelpCenter(context),
                 ),
                 _buildDivider(),
                 _buildListTile(
                   icon: Icons.info_outline_rounded,
                   title: 'Về ứng dụng',
-                  subtitle: 'Phiên bản 1.0.0',
-                  onTap: () {},
+                  subtitle: 'Phiên bản 1.0.0 • Financial Serenity',
+                  onTap: () => _showAboutDialog(context),
                 ),
               ],
             ),
@@ -275,6 +291,284 @@ class ProfileScreen extends ConsumerWidget {
       color: AppColors.borderLight,
       indent: 60,
       endIndent: 16,
+    );
+  }
+
+  void _showThemeDialog(BuildContext context, WidgetRef ref) {
+    final currentTheme = ref.read(themeModeProvider);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Chọn giao diện', style: AppTextStyles.headingSmall()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<ThemeMode>(
+              title: const Text('Chế độ Sáng'),
+              value: ThemeMode.light,
+              groupValue: currentTheme,
+              activeColor: AppColors.primary,
+              onChanged: (val) {
+                if (val != null) {
+                  ref.read(themeModeProvider.notifier).state = val;
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Chế độ Tối'),
+              value: ThemeMode.dark,
+              groupValue: currentTheme,
+              activeColor: AppColors.primary,
+              onChanged: (val) {
+                if (val != null) {
+                  ref.read(themeModeProvider.notifier).state = val;
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Theo hệ thống'),
+              value: ThemeMode.system,
+              groupValue: currentTheme,
+              activeColor: AppColors.primary,
+              onChanged: (val) {
+                if (val != null) {
+                  ref.read(themeModeProvider.notifier).state = val;
+                  Navigator.pop(ctx);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFcmDialog(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return Consumer(
+          builder: (context, ref, child) {
+            final isEnabled = ref.watch(fcmReminderEnabledProvider);
+            return Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Thông báo & Nhắc nhở',
+                        style: AppTextStyles.headingSmall(color: AppColors.primaryDark),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SwitchListTile(
+                    title: const Text('Nhắc nhở chi tiêu hàng ngày'),
+                    subtitle: const Text('Nhận thông báo nhắc nhở vào 20:00 mỗi tối'),
+                    value: isEnabled,
+                    activeThumbColor: AppColors.primary,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (val) {
+                      ref.read(fcmReminderEnabledProvider.notifier).state = val;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.check_circle_rounded, color: AppColors.primary, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Firebase Cloud Messaging đã được kết nối.',
+                            style: TextStyle(fontSize: 12, color: AppColors.primaryDark),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryDark,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        await NotificationService().showTestNotification();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Đã gửi thông báo thử nghiệm! Vui lòng kiểm tra thanh thông báo.'),
+                              backgroundColor: AppColors.primaryDark,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
+                      label: const Text('Gửi thông báo kiểm tra ngay', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showHelpCenter(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (_, scrollController) => Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Trung tâm trợ giúp', style: AppTextStyles.headingMedium(color: AppColors.primaryDark)),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildHelpItem(
+                '💰 Kế hoạch ngân sách là gì?',
+                'Bạn nhập số tiền tổng có thể sử dụng trong tháng, sau đó thiết lập các khoản chi hàng ngày, hàng tuần và cố định. Ứng dụng tự động tính toán tổng chi và số tiền dư dự kiến.',
+              ),
+              _buildHelpItem(
+                '🐷 Quỹ Heo đất hoạt động thế nào?',
+                'Mỗi ngày khi bạn điểm danh chi tiêu: nếu bạn chọn "Không tiêu" cho một khoản nào đó, số tiền đó sẽ tự động được tích lũy vào Quỹ Heo Đất của bạn!',
+              ),
+              _buildHelpItem(
+                '⚡ Chi phí phát sinh',
+                'Khi có khoản chi đột xuất ngoài kế hoạch, hãy nhấn nút "+" trên trang chủ để ghi lại. Khoản này sẽ được tính vào tổng chi tiêu thực tế của ngày.',
+              ),
+              _buildHelpItem(
+                '📊 Báo cáo & Lịch sử',
+                'Xem biểu đồ chi tiêu và theo dõi mức độ tuân thủ ngân sách tại tab Goals/Báo cáo. Bạn cũng có thể xem lịch sử chi tiêu theo từng tháng dễ dàng.',
+              ),
+              _buildHelpItem(
+                '📧 Liên hệ hỗ trợ',
+                'Nếu bạn gặp sự cố hoặc cần hỗ trợ, vui lòng gửi email về:\nsupport@budgetplanner.app',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHelpItem(String title, String content) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.borderLight),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.primaryDark),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            content,
+            style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.savings_rounded, color: AppColors.primary, size: 28),
+            SizedBox(width: 10),
+            Text('Budget Planner'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Financial Serenity',
+              style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.primaryDark),
+            ),
+            const SizedBox(height: 6),
+            const Text('Phiên bản: 1.0.0'),
+            const SizedBox(height: 12),
+            Text(
+              'Ứng dụng lập kế hoạch ngân sách và theo dõi chi tiêu cá nhân thông minh, mang lại sự thảnh thơi và an tâm tài chính cho bạn mỗi ngày.',
+              style: AppTextStyles.bodyMedium(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              '© 2026 Budget Planner Team. All rights reserved.',
+              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primaryDark,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
     );
   }
 }

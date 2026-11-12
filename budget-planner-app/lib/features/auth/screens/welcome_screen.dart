@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
+import '../../budget_setup/controllers/budget_plan_controller.dart';
 import '../controllers/auth_controller.dart';
 import 'sign_in_screen.dart';
 import 'sign_up_screen.dart';
@@ -30,7 +31,7 @@ class WelcomeScreen extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(28),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.25),
+                      color: AppColors.primary.withValues(alpha: 0.25),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
@@ -99,7 +100,15 @@ class WelcomeScreen extends ConsumerWidget {
                             .read(authControllerProvider.notifier)
                             .signInWithGoogle();
                         if (success && context.mounted) {
-                          Navigator.pushReplacementNamed(context, '/home');
+                          // Check if user has an existing plan for this month
+                          final plan = await ref.read(budgetPlanServiceProvider).getCurrentPlan();
+                          if (context.mounted) {
+                            if (plan != null) {
+                              Navigator.pushReplacementNamed(context, '/home');
+                            } else {
+                              Navigator.pushReplacementNamed(context, '/setup');
+                            }
+                          }
                         }
                       },
                       child: Row(
@@ -149,7 +158,7 @@ class WelcomeScreen extends ConsumerWidget {
                             ),
                           ),
                         ),
-                        Text(
+                        const Text(
                           '•',
                           style: TextStyle(color: AppColors.textMuted),
                         ),

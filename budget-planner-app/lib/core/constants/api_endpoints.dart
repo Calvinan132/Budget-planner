@@ -4,6 +4,7 @@ class ApiEndpoints {
 
   // Auth
   static const String syncUser = '/users/sync';
+  static const String userProfile = '/users/profile';
 
   // Master Budget Plan
   static const String createPlan = '/plans';

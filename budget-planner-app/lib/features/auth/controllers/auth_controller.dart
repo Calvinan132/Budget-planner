@@ -41,6 +41,18 @@ class AuthController extends StateNotifier<AuthState> {
 
   AuthController(this._authService) : super(AuthState());
 
+  Future<UserModel?> tryAutoLogin() async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      final user = await _authService.checkAutoLogin();
+      state = state.copyWith(user: user, isLoading: false);
+      return user;
+    } catch (e) {
+      state = state.copyWith(isLoading: false);
+      return null;
+    }
+  }
+
   Future<bool> signInWithEmail(String email, String password) async {
     state = state.copyWith(isLoading: true, errorMessage: null);
     try {
@@ -75,6 +87,18 @@ class AuthController extends StateNotifier<AuthState> {
       }
       state = state.copyWith(isLoading: false);
       return false;
+    } catch (e) {
+      state = state.copyWith(isLoading: false, errorMessage: e.toString());
+      return false;
+    }
+  }
+
+  Future<bool> sendPasswordResetEmail(String email) async {
+    state = state.copyWith(isLoading: true, errorMessage: null);
+    try {
+      await _authService.sendPasswordResetEmail(email);
+      state = state.copyWith(isLoading: false);
+      return true;
     } catch (e) {
       state = state.copyWith(isLoading: false, errorMessage: e.toString());
       return false;

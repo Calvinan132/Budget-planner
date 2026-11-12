@@ -85,7 +85,49 @@ export const sendCheckInPushNotifications = async (): Promise<void> => {
 };
 
 /**
- * Initialize node-cron schedule for 21:00 (Asia/Ho_Chi_Minh)
+  * Midnight Cron Job: Runs at 23:59:59 (Asia/Ho_Chi_Minh).
+  * Automatically marks any lingering 'pending' items as 'completed' (assuming spent).
+  */
+export const autoResolvePendingDailyItems = async (): Promise<void> => {
+  const todayStr = DateTime.now().setZone('Asia/Ho_Chi_Minh').toISODate()!;
+  console.log(`[Midnight Job] Auto-resolving pending items for: ${todayStr}`);
+
+  try {
+    const logsSnapshot = await db.collection(DAILY_LOGS_COLLECTION).where('date', '==', todayStr).get();
+    if (logsSnapshot.empty) return;
+
+    let updatedCount = 0;
+    const batch = db.batch();
+
+    logsSnapshot.docs.forEach((doc) => {
+      const log = doc.data() as DailyLog;
+      let hasChange = false;
+
+      log.items.forEach((item) => {
+        if (item.status === 'pending') {
+          item.status = 'completed'; // Mặc định đã tiêu nếu không tích bỏ qua
+          hasChange = true;
+          updatedCount++;
+        }
+      });
+
+      if (hasChange) {
+        log.updatedAt = new Date().toISOString();
+        batch.set(doc.ref, log, { merge: true });
+      }
+    });
+
+    if (updatedCount > 0) {
+      await batch.commit();
+      console.log(`[Midnight Job] Successfully auto-completed ${updatedCount} pending items.`);
+    }
+  } catch (error) {
+    console.error('[Midnight Job] Error auto-resolving pending items:', error);
+  }
+};
+
+/**
+ * Initialize node-cron schedule for 21:00 and 23:59 (Asia/Ho_Chi_Minh)
  */
 export const initNotificationCronJob = (): cron.ScheduledTask => {
   // Cron expression: 0 21 * * * -> At 21:00 every day
@@ -99,6 +141,18 @@ export const initNotificationCronJob = (): cron.ScheduledTask => {
     }
   );
 
-  console.log('[Cron Job] Registered daily notification job at 21:00 (Asia/Ho_Chi_Minh)');
+  // Midnight consolidation: 59 23 * * * -> At 23:59 every day
+  cron.schedule(
+    '59 23 * * *',
+    async () => {
+      await autoResolvePendingDailyItems();
+    },
+    {
+      timezone: 'Asia/Ho_Chi_Minh',
+    }
+  );
+
+  console.log('[Cron Job] Registered 21:00 notification and 23:59 midnight consolidation jobs (Asia/Ho_Chi_Minh)');
   return task;
 };
+

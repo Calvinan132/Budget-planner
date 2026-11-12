@@ -31,8 +31,8 @@ export interface DailyLog {
 
 export const checkInStatusSchema = z.object({
   itemId: z.string().min(1, 'Item ID is required'),
-  status: z.enum(['completed', 'skipped'], {
-    errorMap: () => ({ message: "Status must be 'completed' or 'skipped'" }),
+  status: z.enum(['completed', 'skipped', 'pending'], {
+    errorMap: () => ({ message: "Status must be 'completed', 'skipped', or 'pending'" }),
   }),
 });
 

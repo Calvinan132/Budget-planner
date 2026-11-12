@@ -21,13 +21,18 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   const authHeader = req.headers.authorization;
 
   if (env.DEV_AUTH_BYPASS) {
-    // Development fallback to allow seamless API testing without Firebase Auth UI setup
-    const devUid = (req.headers['x-dev-user-id'] as string) || 'dev_test_user_123';
-    req.user = {
-      uid: devUid,
-      email: `${devUid}@example.com`,
-    };
-    return next();
+    // Development mode: Lấy user ID thật của người dùng được gửi từ App
+    const devUid =
+      (req.headers['x-user-id'] as string) ||
+      (req.headers['x-dev-user-id'] as string);
+
+    if (devUid && devUid.trim() !== '') {
+      req.user = {
+        uid: devUid,
+        email: (req.headers['x-user-email'] as string) || `${devUid}@gmail.com`,
+      };
+      return next();
+    }
   }
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

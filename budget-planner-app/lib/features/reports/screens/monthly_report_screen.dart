@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_text_styles.dart';
 import '../../../core/utils/currency_formatter.dart';
+import '../../../core/widgets/user_avatar.dart';
+import '../../../core/widgets/app_drawer.dart';
+import '../../auth/controllers/auth_controller.dart';
 import '../controllers/report_controller.dart';
 import 'history_timeline_screen.dart';
 
@@ -13,16 +16,28 @@ class MonthlyReportScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final reportState = ref.watch(monthlyReportControllerProvider);
     final report = reportState.report;
+    final user = ref.watch(authControllerProvider).user;
 
     final isExceeded = (report?.spendingPercentage ?? 0) > 100;
     final progressColor = isExceeded ? AppColors.warningRed : AppColors.primaryDark;
 
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
+      drawer: const AppDrawer(),
       appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(Icons.menu_rounded, color: AppColors.primaryDark),
-          onPressed: () {},
+        leading: Builder(
+          builder: (context) {
+            if (Navigator.canPop(context)) {
+              return IconButton(
+                icon: const Icon(Icons.arrow_back_rounded, color: AppColors.primaryDark),
+                onPressed: () => Navigator.pop(context),
+              );
+            }
+            return IconButton(
+              icon: const Icon(Icons.menu_rounded, color: AppColors.primaryDark),
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            );
+          },
         ),
         title: Text(
           'Financial Serenity',
@@ -30,21 +45,30 @@ class MonthlyReportScreen extends ConsumerWidget {
             fontSize: 18,
           ),
         ),
-        actions: const [
+        actions: [
           Padding(
-            padding: EdgeInsets.only(right: 16.0),
-            child: CircleAvatar(
+            padding: const EdgeInsets.only(right: 16.0),
+            child: UserAvatar(
               radius: 18,
-              backgroundColor: Color(0xFFE5E7EB),
-              child: Icon(Icons.person_rounded, size: 20, color: AppColors.textSecondary),
+              photoUrl: user?.photoUrl,
+              displayName: user?.displayName,
             ),
           ),
         ],
       ),
       body: reportState.isLoading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+          : RefreshIndicator(
+              color: AppColors.primaryDark,
+              onRefresh: () async {
+                final now = DateTime.now();
+                await ref
+                    .read(monthlyReportControllerProvider.notifier)
+                    .loadReport(now.month, now.year);
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -62,7 +86,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Tháng 10, 2023',
+                            'Tháng ${report?.month ?? DateTime.now().month}, ${report?.year ?? DateTime.now().year}',
                             style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(
                               fontSize: 13,
                             ),
@@ -82,6 +106,33 @@ class MonthlyReportScreen extends ConsumerWidget {
                   ),
 
                   const SizedBox(height: 20),
+
+                  // Báo lỗi tải báo cáo (không còn hiển thị dữ liệu giả lập khi lỗi mạng)
+                  if (reportState.errorMessage != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.cloud_off_rounded, color: AppColors.warningRed, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Không thể tải báo cáo từ máy chủ. Vui lòng kiểm tra kết nối và thử lại.',
+                              style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                   // Spending progress bar card matching Stitch AI Image 3
                   Container(
@@ -106,7 +157,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                               ),
                             ),
                             Text(
-                              '${report?.spendingPercentage.toInt() ?? 90}%',
+                              '${report?.spendingPercentage.toInt() ?? 0}%',
                               style: AppTextStyles.headingMedium(color: progressColor).copyWith(
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
@@ -118,7 +169,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: LinearProgressIndicator(
-                            value: ((report?.spendingPercentage ?? 90) / 100).clamp(0.0, 1.0),
+                            value: ((report?.spendingPercentage ?? 0) / 100).clamp(0.0, 1.0),
                             minHeight: 12,
                             backgroundColor: const Color(0xFFE5E7EB),
                             valueColor: AlwaysStoppedAnimation<Color>(progressColor),
@@ -167,7 +218,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                CurrencyFormatter.formatShort(report?.originalBudget ?? 6000000),
+                                CurrencyFormatter.formatShort(report?.originalBudget ?? 0),
                                 style: AppTextStyles.headingMedium(color: AppColors.textPrimary).copyWith(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
@@ -213,7 +264,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                CurrencyFormatter.formatShort(report?.actualSpent ?? 5400000),
+                                CurrencyFormatter.formatShort(report?.actualSpent ?? 0),
                                 style: AppTextStyles.headingMedium(color: AppColors.textPrimary).copyWith(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
@@ -251,7 +302,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              CurrencyFormatter.formatShort(report?.savedAmount ?? 600000),
+                              CurrencyFormatter.formatShort(report?.savedAmount ?? 0),
                               style: AppTextStyles.headingLarge(color: Colors.white).copyWith(
                                 fontSize: 32,
                                 fontWeight: FontWeight.w800,
@@ -265,7 +316,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                           width: 50,
                           height: 50,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -385,6 +436,7 @@ class MonthlyReportScreen extends ConsumerWidget {
                 ],
               ),
             ),
+          ),
     );
   }
 

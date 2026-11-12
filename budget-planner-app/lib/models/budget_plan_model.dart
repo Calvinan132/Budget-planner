@@ -38,6 +38,7 @@ class BudgetPlanModel {
   final DateTime? createdAt;
   
   // Phase 1 / Phase 3 System Spec fields
+  final double initialBudget; // Số tiền người dùng có thể sử dụng trong tháng
   final double totalPlanned;
   final double actualSpent;
   final double savedAmount;
@@ -49,6 +50,7 @@ class BudgetPlanModel {
     required this.weeklyRoutines,
     required this.monthlyFixed,
     this.createdAt,
+    this.initialBudget = 0.0,
     this.totalPlanned = 0.0,
     this.actualSpent = 0.0,
     this.savedAmount = 0.0,
@@ -60,6 +62,21 @@ class BudgetPlanModel {
     double weeklyTotal = weeklyRoutines.fold(0, (sum, item) => sum + (item.amount * item.frequencyPerWeek * 4.33));
     double fixedTotal = monthlyFixed.fold(0, (sum, item) => sum + item.amount);
     return dailyTotal + weeklyTotal + fixedTotal;
+  }
+
+  /// Tính toán tổng chi phí kế hoạch cho một số ngày cụ thể (vd: số ngày còn lại trong tháng)
+  double calculatePlannedForDays(int days, {bool includeFixed = true}) {
+    double dailyTotal = dailyRoutines.fold(0, (sum, item) => sum + (item.amount * days));
+    double weeks = days / 7.0;
+    double weeklyTotal = weeklyRoutines.fold(
+        0, (sum, item) => sum + (item.amount * item.frequencyPerWeek * weeks));
+    double fixedTotal = includeFixed ? monthlyFixed.fold(0, (sum, item) => sum + item.amount) : 0;
+    return dailyTotal + weeklyTotal + fixedTotal;
+  }
+
+  /// Tổng chi tiêu hàng ngày trên 1 ngày đơn lẻ
+  double get totalDailyPerDay {
+    return dailyRoutines.fold(0, (sum, item) => sum + item.amount);
   }
 
   factory BudgetPlanModel.fromJson(Map<String, dynamic> json) {
@@ -78,6 +95,7 @@ class BudgetPlanModel {
               .toList() ??
           [],
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
+      initialBudget: (json['initialBudget'] as num?)?.toDouble() ?? 0.0,
       totalPlanned: (json['totalPlanned'] as num?)?.toDouble() ?? 0.0,
       actualSpent: (json['actualSpent'] as num?)?.toDouble() ?? 0.0,
       savedAmount: (json['savedAmount'] as num?)?.toDouble() ?? 0.0,
@@ -91,6 +109,7 @@ class BudgetPlanModel {
       'dailyRoutines': dailyRoutines.map((e) => e.toJson()).toList(),
       'weeklyRoutines': weeklyRoutines.map((e) => e.toJson()).toList(),
       'monthlyFixed': monthlyFixed.map((e) => e.toJson()).toList(),
+      'initialBudget': initialBudget > 0 ? initialBudget : totalMonthlyBudget,
       'totalPlanned': totalPlanned > 0 ? totalPlanned : totalMonthlyBudget,
       'actualSpent': actualSpent > 0 ? actualSpent : totalMonthlyBudget,
       'savedAmount': savedAmount,

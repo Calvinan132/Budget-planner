@@ -3,83 +3,68 @@ import '../../../core/network/dio_client.dart';
 import '../../../models/daily_expense_model.dart';
 import '../../../models/report_model.dart';
 
+/// Service báo cáo — gọi API thật, KHÔNG giả lập mock khi lỗi mạng.
+/// Lỗi sẽ được đẩy lên controller để hiển thị trạng thái lỗi cho người dùng.
 class ReportService {
   final DioClient _dioClient;
 
   ReportService(this._dioClient);
 
   Future<MonthlyReportModel> getMonthlyReport(int month, int year) async {
-    try {
-      final response = await _dioClient.dio.get(
-        ApiEndpoints.monthlyReport,
-        queryParameters: {'month': month, 'year': year},
-      );
-      return MonthlyReportModel.fromJson(response.data['data']);
-    } catch (e) {
-      return MonthlyReportModel(
-        month: month,
-        year: year,
-        originalBudget: 6000000,
-        actualSpent: 5400000,
-        savedAmount: 600000,
-        spendingPercentage: 90.0,
-        skippedCount: 5,
-        behaviorLogs: [
-          BehaviorLogItem(
-            title: 'Bỏ qua 5 cốc cà phê',
-            subtitle: '+175.000đ gửi heo đất',
-            iconType: 'coffee',
-          ),
-          BehaviorLogItem(
-            title: 'Nấu ăn tại nhà 12 bữa',
-            subtitle: '+420.000đ tiết kiệm',
-            iconType: 'food',
-          ),
-        ],
-      );
-    }
+    final response = await _dioClient.dio.get(
+      ApiEndpoints.monthlyReport,
+      queryParameters: {'month': month, 'year': year},
+    );
+    return MonthlyReportModel.fromJson(
+      Map<String, dynamic>.from(response.data['data'] as Map),
+    );
   }
 
+  /// Backend trả về { month, year, daysCount, logs: DailyLog[] } — cần bung
+  /// mỗi DailyLog thành danh sách chi tiêu phẳng theo ngày.
   Future<List<DailyExpenseModel>> getHistoryTimeline(int month, int year) async {
-    try {
-      final response = await _dioClient.dio.get(
-        ApiEndpoints.historyReport,
-        queryParameters: {'month': month, 'year': year},
-      );
-      final list = (response.data['data'] as List<dynamic>?)
-              ?.map((e) => DailyExpenseModel.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [];
-      return list;
-    } catch (e) {
-      final now = DateTime.now();
-      return [
-        DailyExpenseModel(
-          id: '1',
-          name: 'Ăn sáng',
-          amount: 25000,
-          category: 'food',
-          status: 'completed',
-          date: now.subtract(const Duration(hours: 4)),
-        ),
-        DailyExpenseModel(
-          id: '2',
-          name: 'Cà phê',
-          amount: 35000,
-          category: 'coffee',
-          status: 'skipped',
-          date: now.subtract(const Duration(hours: 6)),
-        ),
-        DailyExpenseModel(
-          id: '3',
-          name: 'Sửa xe phát sinh',
-          amount: 150000,
+    final response = await _dioClient.dio.get(
+      ApiEndpoints.historyReport,
+      queryParameters: {'month': month, 'year': year},
+    );
+
+    final dynamic data = response.data['data'];
+    final List<dynamic> logs = data is Map && data['logs'] is List
+        ? data['logs'] as List<dynamic>
+        : (data is List ? data : const <dynamic>[]);
+
+    final list = <DailyExpenseModel>[];
+    for (final log in logs) {
+      final logMap = Map<String, dynamic>.from(log as Map);
+      final DateTime logDate = DateTime.tryParse('${logMap['date']}') ?? DateTime.now();
+
+      for (final item in (logMap['items'] as List<dynamic>? ?? const <dynamic>[])) {
+        final m = Map<String, dynamic>.from(item as Map);
+        list.add(DailyExpenseModel(
+          id: (m['id'] ?? '') as String,
+          name: (m['name'] ?? '') as String,
+          amount: (m['amount'] as num?)?.toDouble() ?? 0.0,
+          category: m['category'] as String? ?? 'general',
+          status: m['status'] as String? ?? 'pending',
+          date: logDate,
+        ));
+      }
+
+      for (final exp in (logMap['unexpectedExpenses'] as List<dynamic>? ?? const <dynamic>[])) {
+        final m = Map<String, dynamic>.from(exp as Map);
+        list.add(DailyExpenseModel(
+          id: (m['id'] ?? '') as String,
+          name: (m['reason'] ?? 'Phát sinh') as String,
+          amount: (m['amount'] as num?)?.toDouble() ?? 0.0,
           category: 'unexpected',
           status: 'completed',
           isUnexpected: true,
-          date: now.subtract(const Duration(days: 1)),
-        ),
-      ];
+          date: logDate,
+        ));
+      }
     }
+
+    list.sort((a, b) => b.date.compareTo(a.date));
+    return list;
   }
 }

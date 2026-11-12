@@ -4,8 +4,52 @@ import { MonthlyPlan } from '../models/plan.model';
 import { DailyLog } from '../models/dailyLog.model';
 import { PlanService } from './planService';
 import { inMemoryDb } from '../config/inMemoryDb';
+import { db } from '../config/firebase';
+
+const PLANS_COLLECTION = 'monthly_plans';
+const DAILY_LOGS_COLLECTION = 'daily_logs';
 
 export class ReportService {
+  /**
+   * Lấy kế hoạch của một tháng từ Firestore (chính), fallback về inMemoryDb nếu lỗi mạng.
+   */
+  private static async getPlanDoc(planDocId: string): Promise<MonthlyPlan | undefined> {
+    try {
+      const docSnap = await db.collection(PLANS_COLLECTION).doc(planDocId).get();
+      if (docSnap.exists) {
+        return docSnap.data() as MonthlyPlan;
+      }
+    } catch (err) {
+      console.warn('[ReportService] Firestore getPlanDoc failed, fallback to inMemoryDb:', err);
+    }
+    return inMemoryDb.plans[planDocId] as MonthlyPlan | undefined;
+  }
+
+  /**
+   * Lấy toàn bộ daily_logs của một khoảng ngày từ Firestore (chính).
+   * Chỉ filter theo userId (dùng index tự động của Firestore) rồi lọc khoảng ngày trong bộ nhớ,
+   * tránh yêu cầu composite index khi chưa deploy firestore.indexes.json.
+   */
+  private static async getLogsForUserInRange(
+    userId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<DailyLog[]> {
+    try {
+      const snap = await db.collection(DAILY_LOGS_COLLECTION).where('userId', '==', userId).get();
+      const logs = snap.docs
+        .map((d) => d.data() as DailyLog)
+        .filter((log) => log.date >= startDate && log.date <= endDate)
+        .sort((a, b) => a.date.localeCompare(b.date));
+      return logs;
+    } catch (err) {
+      console.warn('[ReportService] Firestore getLogsForUserInRange failed, fallback to inMemoryDb:', err);
+      return Object.values(inMemoryDb.dailyLogs).filter(
+        (log: any) => log.userId === userId && log.date >= startDate && log.date <= endDate
+      ) as DailyLog[];
+    }
+  }
+
   public static async getMonthlyReport(
     userId: string,
     month?: number,
@@ -17,7 +61,7 @@ export class ReportService {
     const monthStr = targetMonth.toString().padStart(2, '0');
 
     const planDocId = PlanService.getPlanDocId(userId, targetYear, targetMonth);
-    const plan = inMemoryDb.plans[planDocId] as MonthlyPlan | undefined;
+    const plan = await this.getPlanDoc(planDocId);
 
     let totalPlanned = 0;
     let actualSpent = 0;
@@ -36,9 +80,7 @@ export class ReportService {
     const skippedMap: Map<string, { count: number; saved: number }> = new Map();
     const allUnexpectedExpenses: { id: string; date: string; amount: number; reason: string }[] = [];
 
-    const logs = Object.values(inMemoryDb.dailyLogs).filter(
-      (log: any) => log.userId === userId && log.date >= startDate && log.date <= endDate
-    ) as DailyLog[];
+    const logs = await this.getLogsForUserInRange(userId, startDate, endDate);
 
     logs.forEach((log) => {
       log.items.forEach((item) => {
@@ -100,9 +142,9 @@ export class ReportService {
     const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
     const endDate = `${targetYear}-${monthStr}-${daysInMonth.toString().padStart(2, '0')}`;
 
-    const logs = (Object.values(inMemoryDb.dailyLogs).filter(
-      (log: any) => log.userId === userId && log.date >= startDate && log.date <= endDate
-    ) as DailyLog[]).sort((a, b) => a.date.localeCompare(b.date));
+    const logs = (await this.getLogsForUserInRange(userId, startDate, endDate)).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
 
     return {
       month: targetMonth,
