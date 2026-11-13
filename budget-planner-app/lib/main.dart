@@ -17,7 +17,7 @@ import 'features/profile/screens/profile_screen.dart';
 
 import 'core/theme/theme_provider.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Set system UI style (transparent status bar with dark icons)
@@ -28,19 +28,22 @@ void main() async {
     ),
   );
 
-  // Initialize Firebase safely
-  try {
-    await Firebase.initializeApp();
-    await NotificationService().initialize();
-  } catch (e) {
-    debugPrint('Firebase initialization skipped/failed: $e');
-  }
-
+  // Run app immediately to prevent black screen on startup
   runApp(
     const ProviderScope(
       child: BudgetPlannerApp(),
     ),
   );
+
+  // Initialize Firebase and notifications asynchronously in the background
+  Future.microtask(() async {
+    try {
+      await Firebase.initializeApp().timeout(const Duration(seconds: 3));
+      await NotificationService().initialize().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('Firebase/Notification background initialization skipped/failed: $e');
+    }
+  });
 }
 
 class BudgetPlannerApp extends ConsumerWidget {

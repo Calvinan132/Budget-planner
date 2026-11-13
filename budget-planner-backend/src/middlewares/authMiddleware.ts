@@ -33,6 +33,15 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
       };
       return next();
     }
+
+    // Cho phép token dev_bypass_token hoặc mock token từ Flow Monitor Web
+    if (authHeader && (authHeader.includes('dev_bypass_token') || authHeader.includes('mock_token'))) {
+      req.user = {
+        uid: 'dev_user_monitor',
+        email: 'dev_user_monitor@gmail.com',
+      };
+      return next();
+    }
   }
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

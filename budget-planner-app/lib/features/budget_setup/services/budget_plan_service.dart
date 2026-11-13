@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show DateTimeRange;
 import '../../../core/constants/api_endpoints.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/services/offline_cache_service.dart';
@@ -17,11 +18,21 @@ class BudgetPlanService {
       // Gửi kèm tháng/năm hiện tại (giờ Việt Nam) để plan được lưu lên Firestore
       // thay vì bị từ chối validation và chỉ lưu cache cục bộ.
       final now = DateTime.now();
+      final startDay = now.day;
+      final daysInMonth = DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: DateTime(now.year, now.month + 1, 1),
+      ).duration.inDays;
+      final activeDays = daysInMonth - startDay + 1;
+
       final response = await _dioClient.dio.post(
         ApiEndpoints.createPlan,
         data: {
           'month': now.month,
           'year': now.year,
+          'startDay': startDay,
+          'activeDays': activeDays,
+          'totalPlanned': plan.totalPlanned, // Gửi lên totalPlanned đã tính đúng theo ngày còn lại
           ...plan.toJson(),
         },
       );
@@ -61,9 +72,22 @@ class BudgetPlanService {
 
   Future<BudgetPlanModel> updateCurrentPlan(BudgetPlanModel plan) async {
     try {
+      final now = DateTime.now();
+      final startDay = now.day;
+      final daysInMonth = DateTimeRange(
+        start: DateTime(now.year, now.month, 1),
+        end: DateTime(now.year, now.month + 1, 1),
+      ).duration.inDays;
+      final activeDays = daysInMonth - startDay + 1;
+
       final response = await _dioClient.dio.put(
         ApiEndpoints.currentPlan,
-        data: plan.toJson(),
+        data: {
+          'startDay': startDay,
+          'activeDays': activeDays,
+          'totalPlanned': plan.totalPlanned,
+          ...plan.toJson(),
+        },
       );
       final updated = BudgetPlanModel.fromJson(response.data['data']);
       await _cacheService.cacheCurrentPlan(updated);

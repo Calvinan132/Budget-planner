@@ -38,8 +38,10 @@ class BudgetPlanModel {
   final DateTime? createdAt;
   
   // Phase 1 / Phase 3 System Spec fields
+  final int startDay;    // Ngày bắt đầu tính kế hoạch (từ server)
+  final int activeDays;  // Số ngày tính kế hoạch (từ server)
   final double initialBudget; // Số tiền người dùng có thể sử dụng trong tháng
-  final double totalPlanned;
+  final double totalPlanned;  // Tổng chi phí dự kiến (theo activeDays, từ server)
   final double actualSpent;
   final double savedAmount;
   final bool isLocked;
@@ -50,6 +52,8 @@ class BudgetPlanModel {
     required this.weeklyRoutines,
     required this.monthlyFixed,
     this.createdAt,
+    this.startDay = 1,
+    this.activeDays = 30,
     this.initialBudget = 0.0,
     this.totalPlanned = 0.0,
     this.actualSpent = 0.0,
@@ -57,6 +61,7 @@ class BudgetPlanModel {
     this.isLocked = true,
   });
 
+  /// Tính toán tổng chi phí theo toàn bộ 30 ngày (chỉ dùng để tham khảo, không hiển thị cho user)
   double get totalMonthlyBudget {
     double dailyTotal = dailyRoutines.fold(0, (sum, item) => sum + (item.amount * 30));
     double weeklyTotal = weeklyRoutines.fold(0, (sum, item) => sum + (item.amount * item.frequencyPerWeek * 4.33));
@@ -95,6 +100,8 @@ class BudgetPlanModel {
               .toList() ??
           [],
       createdAt: json['createdAt'] != null ? DateTime.tryParse(json['createdAt']) : null,
+      startDay: (json['startDay'] as num?)?.toInt() ?? 1,
+      activeDays: (json['activeDays'] as num?)?.toInt() ?? 30,
       initialBudget: (json['initialBudget'] as num?)?.toDouble() ?? 0.0,
       totalPlanned: (json['totalPlanned'] as num?)?.toDouble() ?? 0.0,
       actualSpent: (json['actualSpent'] as num?)?.toDouble() ?? 0.0,
@@ -106,12 +113,14 @@ class BudgetPlanModel {
   Map<String, dynamic> toJson() {
     return {
       if (id != null) 'id': id,
+      'startDay': startDay,
+      'activeDays': activeDays,
       'dailyRoutines': dailyRoutines.map((e) => e.toJson()).toList(),
       'weeklyRoutines': weeklyRoutines.map((e) => e.toJson()).toList(),
       'monthlyFixed': monthlyFixed.map((e) => e.toJson()).toList(),
-      'initialBudget': initialBudget > 0 ? initialBudget : totalMonthlyBudget,
+      'initialBudget': initialBudget > 0 ? initialBudget : totalPlanned,
       'totalPlanned': totalPlanned > 0 ? totalPlanned : totalMonthlyBudget,
-      'actualSpent': actualSpent > 0 ? actualSpent : totalMonthlyBudget,
+      'actualSpent': actualSpent,
       'savedAmount': savedAmount,
       'isLocked': isLocked,
     };

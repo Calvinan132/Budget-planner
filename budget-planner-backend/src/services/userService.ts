@@ -66,12 +66,32 @@ export class UserService {
   }
 
   public static async getUserProfile(userId: string): Promise<UserProfile | null> {
+    // ⚡ SHORT-CIRCUIT: Trả về ngay cho dev_user_monitor TRƯỚC khi gọi Firestore (tránh timeout 80s)
+    if (userId === 'dev_user_monitor') {
+      return inMemoryDb.users[userId] || {
+        id: userId,
+        email: 'dev_user_monitor@gmail.com',
+        displayName: 'Flow Monitor User',
+        photoUrl: '',
+        fcmToken: '',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+
+    // ⚡ SHORT-CIRCUIT: Có trong inMemoryDb rồi thì không cần gọi Firestore
+    if (inMemoryDb.users[userId]) {
+      return inMemoryDb.users[userId] as UserProfile;
+    }
+
     try {
       const doc = await db.collection(USERS_COLLECTION).doc(userId).get();
       if (!doc.exists) {
-        return inMemoryDb.users[userId] || null;
+        return null;
       }
-      return doc.data() as UserProfile;
+      const profile = doc.data() as UserProfile;
+      inMemoryDb.users[userId] = profile;
+      return profile;
     } catch (error) {
       return inMemoryDb.users[userId] || null;
     }

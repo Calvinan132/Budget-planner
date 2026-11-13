@@ -22,7 +22,36 @@ export class DailyLogService {
     const dateStr = targetDate || DateTime.now().setZone('Asia/Ho_Chi_Minh').toISODate()!;
     const docId = this.getDailyLogDocId(userId, dateStr);
 
-    // 1. Try reading from Firestore
+    // ⚡ SHORT-CIRCUIT: Có trong inMemoryDb rồi thì trả về ngay (tránh Firestore timeout)
+    if (inMemoryDb.dailyLogs[docId]) {
+      return inMemoryDb.dailyLogs[docId];
+    }
+
+    // ⚡ SHORT-CIRCUIT: Với dev_user_monitor, tạo luôn daily log mẫu mà không gọi Firestore
+    if (userId === 'dev_user_monitor') {
+      const dt = DateTime.fromISO(dateStr);
+      let plan: MonthlyPlan | undefined;
+      try {
+        plan = await PlanService.getCurrentPlan(userId, dt.month, dt.year);
+      } catch (_) {}
+
+      const items: DailyCheckInItem[] = [];
+      if (plan) {
+        plan.dailyRoutines.forEach((routine: any) => {
+          items.push({ id: uuidv4(), routineId: routine.id, name: routine.name, amount: routine.amount, type: 'daily', status: 'pending' });
+        });
+        plan.weeklyRoutines.forEach((routine: any) => {
+          items.push({ id: uuidv4(), routineId: routine.id, name: routine.name, amount: routine.amount, type: 'weekly', status: 'pending' });
+        });
+      }
+
+      const now = new Date().toISOString();
+      const newLog: DailyLog = { id: docId, userId, date: dateStr, items, unexpectedExpenses: [], createdAt: now, updatedAt: now };
+      inMemoryDb.dailyLogs[docId] = newLog;
+      return newLog;
+    }
+
+    // 1. Try reading from Firestore for real users
     try {
       const logDoc = await db.collection(DAILY_LOGS_COLLECTION).doc(docId).get();
       if (logDoc.exists) {
@@ -32,10 +61,6 @@ export class DailyLogService {
       }
     } catch (err) {
       console.warn('[DailyLogService] Firestore getTodayLog failed, trying inMemoryDb:', err);
-    }
-
-    if (inMemoryDb.dailyLogs[docId]) {
-      return inMemoryDb.dailyLogs[docId];
     }
 
     // 2. Not exists: generate from MonthlyPlan

@@ -14,10 +14,16 @@ export class ReportService {
    * Lấy kế hoạch của một tháng từ Firestore (chính), fallback về inMemoryDb nếu lỗi mạng.
    */
   private static async getPlanDoc(planDocId: string): Promise<MonthlyPlan | undefined> {
+    // ⚡ SHORT-CIRCUIT: inMemoryDb trước (tránh Firestore timeout)
+    if (inMemoryDb.plans[planDocId]) {
+      return inMemoryDb.plans[planDocId] as MonthlyPlan;
+    }
     try {
       const docSnap = await db.collection(PLANS_COLLECTION).doc(planDocId).get();
       if (docSnap.exists) {
-        return docSnap.data() as MonthlyPlan;
+        const plan = docSnap.data() as MonthlyPlan;
+        inMemoryDb.plans[planDocId] = plan;
+        return plan;
       }
     } catch (err) {
       console.warn('[ReportService] Firestore getPlanDoc failed, fallback to inMemoryDb:', err);
@@ -35,6 +41,12 @@ export class ReportService {
     startDate: string,
     endDate: string
   ): Promise<DailyLog[]> {
+    // ⚡ SHORT-CIRCUIT: Với dev_user_monitor, dùng inMemoryDb luôn
+    if (userId === 'dev_user_monitor') {
+      return Object.values(inMemoryDb.dailyLogs).filter(
+        (log: any) => log.userId === userId && log.date >= startDate && log.date <= endDate
+      ) as DailyLog[];
+    }
     try {
       const snap = await db.collection(DAILY_LOGS_COLLECTION).where('userId', '==', userId).get();
       const logs = snap.docs
@@ -61,6 +73,14 @@ export class ReportService {
     const monthStr = targetMonth.toString().padStart(2, '0');
 
     const planDocId = PlanService.getPlanDocId(userId, targetYear, targetMonth);
+
+    // ⚡ Ensure dev_user_monitor plan is seeded in inMemoryDb before getPlanDoc
+    if (userId === 'dev_user_monitor' && !inMemoryDb.plans[planDocId]) {
+      try {
+        await PlanService.getCurrentPlan(userId, targetMonth, targetYear);
+      } catch (_) {}
+    }
+
     const plan = await this.getPlanDoc(planDocId);
 
     let totalPlanned = 0;

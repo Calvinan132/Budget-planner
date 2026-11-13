@@ -15,6 +15,9 @@ export class PlanService {
     return `${userId}_${year}_${monthStr}`;
   }
 
+  /**
+   * Tính tổng chi phí dự kiến theo toàn bộ tháng (dùng làm tham chiếu, không phải giá trị hiển thị).
+   */
   public static calculateTotalPlanned(
     month: number,
     year: number,
@@ -25,6 +28,24 @@ export class PlanService {
     const daysInMonth = new Date(year, month, 0).getDate();
     const dailySum = dailyRoutines.reduce((acc, item) => acc + item.amount, 0) * daysInMonth;
     const weeklySum = weeklyRoutines.reduce((acc, item) => acc + item.amount * item.frequencyPerWeek * 4.3, 0);
+    const fixedSum = monthlyFixed.reduce((acc, item) => acc + item.amount, 0);
+
+    return Math.round((dailySum + weeklySum + fixedSum) * 100) / 100;
+  }
+
+  /**
+   * Tính tổng chi phí dự kiến theo số ngày cụ thể (ví dụ: số ngày còn lại trong tháng).
+   * Đây là hàm chính xác để tính kế hoạch khi tạo giữa tháng.
+   */
+  public static calculateTotalPlannedForDays(
+    activeDays: number,
+    dailyRoutines: DailyRoutine[],
+    weeklyRoutines: WeeklyRoutine[],
+    monthlyFixed: MonthlyFixed[]
+  ): number {
+    const weeks = activeDays / 7.0;
+    const dailySum = dailyRoutines.reduce((acc, item) => acc + item.amount, 0) * activeDays;
+    const weeklySum = weeklyRoutines.reduce((acc, item) => acc + item.amount * item.frequencyPerWeek * weeks, 0);
     const fixedSum = monthlyFixed.reduce((acc, item) => acc + item.amount, 0);
 
     return Math.round((dailySum + weeklySum + fixedSum) * 100) / 100;
@@ -68,10 +89,20 @@ export class PlanService {
       amount: item.amount,
     }));
 
-    const totalPlanned = this.calculateTotalPlanned(month, year, dailyRoutines, weeklyRoutines, monthlyFixed);
+    // Xác định ngày bắt đầu tính kế hoạch và số ngày hiệu lực
+    const startDay = (data as any).startDay || nowVietnam.day;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const activeDays = (data as any).activeDays || (daysInMonth - startDay + 1);
+
+    // Ưu tiên dùng totalPlanned từ client (đã tính đúng theo số ngày còn lại).
+    // Chỉ tự tính lại nếu client không gửi.
+    const totalPlanned = (data as any).totalPlanned > 0
+      ? (data as any).totalPlanned
+      : this.calculateTotalPlannedForDays(activeDays, dailyRoutines, weeklyRoutines, monthlyFixed);
+
     const initialBudget = data.initialBudget !== undefined ? data.initialBudget : totalPlanned;
     const actualSpent = 0;
-    // Tiền tiết kiệm = Số tiền người dùng nhập đầu tháng - Số tiền tiêu dự kiến + số tiền không tiêu - phát sinh
+    // Tiền tiết kiệm = Số tiền người dùng nhập đầu tháng - Số tiền tiêu dự kiến theo kế hoạch
     const savedAmount = Math.round((initialBudget - totalPlanned) * 100) / 100;
     const now = new Date().toISOString();
 
@@ -80,6 +111,8 @@ export class PlanService {
       userId,
       month,
       year,
+      startDay,
+      activeDays,
       initialBudget,
       totalPlanned,
       actualSpent,
@@ -109,7 +142,46 @@ export class PlanService {
 
     const docId = this.getPlanDocId(userId, targetYear, targetMonth);
 
-    // Try Firestore first
+    // ⚡ SHORT-CIRCUIT: Trả về ngay cho dev_user_monitor TRƯỚC khi gọi Firestore (tránh timeout 80s)
+    if (userId === 'dev_user_monitor') {
+      if (inMemoryDb.plans[docId]) {
+        return inMemoryDb.plans[docId];
+      }
+      const samplePlan: MonthlyPlan = {
+        id: docId,
+        userId,
+        month: targetMonth,
+        year: targetYear,
+        startDay: 1,
+        activeDays: new Date(targetYear, targetMonth, 0).getDate(),
+        initialBudget: 15000000,
+        totalPlanned: 12000000,
+        actualSpent: 0,
+        savedAmount: 3000000,
+        isLocked: false,
+        dailyRoutines: [
+          { id: 'd1', name: 'Ăn uống hàng ngày', amount: 60000 },
+          { id: 'd2', name: 'Cà phê / Giải trí', amount: 35000 }
+        ],
+        weeklyRoutines: [
+          { id: 'w1', name: 'Xăng xe di chuyển', amount: 100000, frequencyPerWeek: 1 }
+        ],
+        monthlyFixed: [
+          { id: 'm1', name: 'Tiền thuê trọ & dịch vụ', amount: 4000000 }
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      inMemoryDb.plans[docId] = samplePlan;
+      return samplePlan;
+    }
+
+    // ⚡ SHORT-CIRCUIT: Có trong inMemoryDb rồi thì không cần gọi Firestore
+    if (inMemoryDb.plans[docId]) {
+      return inMemoryDb.plans[docId];
+    }
+
+    // Gọi Firestore cho real users
     try {
       const docSnap = await db.collection(PLANS_COLLECTION).doc(docId).get();
       if (docSnap.exists) {
@@ -121,12 +193,7 @@ export class PlanService {
       console.warn('[PlanService] Firestore get failed, fallback to inMemoryDb:', err);
     }
 
-    const plan = inMemoryDb.plans[docId];
-    if (!plan) {
-      throw new AppError(MESSAGES.PLAN.NOT_FOUND, HTTP_STATUS.NOT_FOUND);
-    }
-
-    return plan;
+    throw new AppError(MESSAGES.PLAN.NOT_FOUND, HTTP_STATUS.NOT_FOUND);
   }
 
   public static async updateCurrentPlan(userId: string, data: UpdatePlanDTO): Promise<MonthlyPlan> {
@@ -164,7 +231,14 @@ export class PlanService {
         }))
       : currentPlan.monthlyFixed;
 
-    const totalPlanned = this.calculateTotalPlanned(targetMonth, targetYear, dailyRoutines, weeklyRoutines, monthlyFixed);
+    const totalPlanned = (data as any).totalPlanned > 0
+      ? (data as any).totalPlanned
+      : (() => {
+          const startDay = (data as any).startDay || currentPlan.startDay || 1;
+          const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+          const activeDays = (data as any).activeDays || currentPlan.activeDays || (daysInMonth - startDay + 1);
+          return this.calculateTotalPlannedForDays(activeDays, dailyRoutines, weeklyRoutines, monthlyFixed);
+        })();
     const initialBudget = data.initialBudget !== undefined ? data.initialBudget : (currentPlan.initialBudget ?? totalPlanned);
     // Tiền tiết kiệm = initialBudget - totalPlanned + (các khoản đã skipped - phát sinh)
     // Để bảo toàn các delta skipped/unexpected trước đó:
@@ -172,8 +246,13 @@ export class PlanService {
     const savedAmount = Math.round((currentPlan.savedAmount + baseSavingsChange) * 100) / 100;
     const updatedAt = new Date().toISOString();
 
+    const updatedStartDay = (data as any).startDay ?? currentPlan.startDay ?? 1;
+    const updatedActiveDays = (data as any).activeDays ?? currentPlan.activeDays ?? (new Date(targetYear, targetMonth, 0).getDate() - updatedStartDay + 1);
+
     const updatedPlan: MonthlyPlan = {
       ...currentPlan,
+      startDay: updatedStartDay,
+      activeDays: updatedActiveDays,
       initialBudget,
       totalPlanned,
       savedAmount,

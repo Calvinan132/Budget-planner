@@ -301,46 +301,34 @@ class ProfileScreen extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: Text('Chọn giao diện', style: AppTextStyles.headingSmall()),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<ThemeMode>(
-              title: const Text('Chế độ Sáng'),
-              value: ThemeMode.light,
-              groupValue: currentTheme,
-              activeColor: AppColors.primary,
-              onChanged: (val) {
-                if (val != null) {
-                  ref.read(themeModeProvider.notifier).state = val;
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Chế độ Tối'),
-              value: ThemeMode.dark,
-              groupValue: currentTheme,
-              activeColor: AppColors.primary,
-              onChanged: (val) {
-                if (val != null) {
-                  ref.read(themeModeProvider.notifier).state = val;
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-            RadioListTile<ThemeMode>(
-              title: const Text('Theo hệ thống'),
-              value: ThemeMode.system,
-              groupValue: currentTheme,
-              activeColor: AppColors.primary,
-              onChanged: (val) {
-                if (val != null) {
-                  ref.read(themeModeProvider.notifier).state = val;
-                  Navigator.pop(ctx);
-                }
-              },
-            ),
-          ],
+        content: RadioGroup<ThemeMode>(
+          groupValue: currentTheme,
+          onChanged: (val) {
+            if (val != null) {
+              ref.read(themeModeProvider.notifier).state = val;
+              Navigator.pop(ctx);
+            }
+          },
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<ThemeMode>(
+                title: Text('Chế độ Sáng'),
+                value: ThemeMode.light,
+                activeColor: AppColors.primary,
+              ),
+              RadioListTile<ThemeMode>(
+                title: Text('Chế độ Tối'),
+                value: ThemeMode.dark,
+                activeColor: AppColors.primary,
+              ),
+              RadioListTile<ThemeMode>(
+                title: Text('Theo hệ thống'),
+                value: ThemeMode.system,
+                activeColor: AppColors.primary,
+              ),
+            ],
+          ),
         ),
       ),
     );

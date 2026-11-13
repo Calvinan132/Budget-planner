@@ -129,7 +129,7 @@ class PlanOverviewScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Dự tính chi: ${CurrencyFormatter.formatVND(plan?.totalMonthlyBudget ?? 0)} • Mục tiêu tiết kiệm: ${CurrencyFormatter.formatVND(plan?.savedAmount ?? 0)}',
+                    'Dự tính chi: ${CurrencyFormatter.formatVND(plan?.totalPlanned ?? 0)} • Mục tiêu tiết kiệm: ${CurrencyFormatter.formatVND(plan?.savedAmount ?? 0)}',
                     style: AppTextStyles.bodyMedium(color: AppColors.textSecondary).copyWith(fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
